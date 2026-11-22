@@ -4,62 +4,104 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class BMIResultService {
+public final class BMIResultService {
 
-    // Environment variables with Docker-friendly defaults
-    private static final String DB_HOST =
-            System.getenv().getOrDefault("DB_HOST", "db");
+    // Logger instead of System.out and System.err
+    private static final Logger LOGGER =
+            Logger.getLogger(BMIResultService.class.getName());
 
-    private static final String DB_PORT =
-            System.getenv().getOrDefault("DB_PORT", "3306");
-
-    private static final String DB_NAME =
-            System.getenv().getOrDefault("DB_NAME", "bmi_localization");
-
-    private static final String DB_USER =
-            System.getenv().getOrDefault("DB_USER", "root");
-
-    private static final String DB_PASSWORD =
-            System.getenv().getOrDefault("DB_PASSWORD", "Test12");
-
-    private static final String DB_URL =
-            "jdbc:mysql://" + DB_HOST + ":" + DB_PORT + "/" + DB_NAME
-                    + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
-
-    static {
-        try {
-            // Ensure MySQL driver loads properly
-            Class.forName("com.mysql.cj.jdbc.Driver");
-        } catch (ClassNotFoundException e) {
-            System.err.println("❌ MySQL JDBC Driver not found.");
-            e.printStackTrace();
-        }
+    // Prevent creating instances of this utility class
+    private BMIResultService() {
+        throw new IllegalStateException("Utility class");
     }
 
-    public static void saveResult(double weight, double height, double bmi, String language) {
+    // Read database settings from environment variables
+    private static String getEnv(
+            String name,
+            String defaultValue) {
 
-        String query = "INSERT INTO bmi_results (weight, height, bmi, language) VALUES (?, ?, ?, ?)";
+        String value = System.getenv(name);
 
-        System.out.println("🔎 Attempting DB connection to: " + DB_URL);
+        return value == null || value.isBlank()
+                ? defaultValue
+                : value;
+    }
 
-        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-             PreparedStatement stmt = conn.prepareStatement(query)) {
+    // Build MariaDB database connection URL
+    private static String getDatabaseUrl() {
+            String host = getEnv("DB_HOST", "localhost");
+            String port = getEnv("DB_PORT", "3306");
+            String database = getEnv("DB_NAME", "bmi_localization");
 
+            return "jdbc:mariadb://" + host + ":" + port + "/" + database;
+    }
+    // Save BMI calculation result to MariaDB
+    public static void saveResult(
+            double weight,
+            double height,
+            double bmi,
+            String language) {
+
+        // Read database credentials
+        String dbUser = getEnv("DB_USER", "root");
+        String dbPassword = System.getenv("DB_PASSWORD");
+
+        // Validate database password configuration
+        if (dbPassword == null || dbPassword.isBlank()) {
+
+            LOGGER.warning(
+                    "Database password is not configured."
+            );
+
+            return;
+        }
+
+        // SQL query using PreparedStatement
+        String query =
+                "INSERT INTO bmi_results "
+                        + "(weight, height, bmi, language) "
+                        + "VALUES (?, ?, ?, ?)";
+
+        // Connect to MariaDB
+        try (Connection conn =
+                     DriverManager.getConnection(
+                             getDatabaseUrl(),
+                             dbUser,
+                             dbPassword
+                     );
+
+             PreparedStatement stmt =
+                     conn.prepareStatement(query)) {
+
+            // Set SQL parameters
             stmt.setDouble(1, weight);
             stmt.setDouble(2, height);
             stmt.setDouble(3, bmi);
             stmt.setString(4, language);
 
-            stmt.executeUpdate();
+            // Execute INSERT query
+            int rowsInserted = stmt.executeUpdate();
 
-            System.out.println("✅ BMI result saved successfully.");
+            // Log successful database operation
+            LOGGER.log(
+                    Level.INFO,
+                    "BMI result saved successfully. Rows inserted: {0}",
+                    rowsInserted
+            );
 
         } catch (SQLException e) {
-            System.err.println("❌ Database connection failed.");
-            System.err.println("URL: " + DB_URL);
-            System.err.println("User: " + DB_USER);
-            e.printStackTrace();
+
+            LOGGER.log(
+                    Level.WARNING,
+                    "Unable to save BMI result to database. SQLState: "
+                            + e.getSQLState()
+                            + ", Error code: "
+                            + e.getErrorCode(),
+                    e
+            );
         }
     }
 }

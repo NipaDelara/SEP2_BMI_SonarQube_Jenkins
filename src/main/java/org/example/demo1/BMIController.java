@@ -1,28 +1,30 @@
+
 package org.example.demo1;
 
 import javafx.application.Platform;
-import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.geometry.NodeOrientation;
-import javafx.scene.chart.ScatterChart;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
 import java.text.DecimalFormat;
+import java.time.Clock;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
-import java.util.MissingResourceException;
-import java.util.ResourceBundle;
-import javafx.scene.layout.VBox;
-
 
 public class BMIController {
+
+    // Constants to avoid duplicate string literals
+    private static final String INVALID_KEY = "invalid";
+    private static final String INVALID_MESSAGE = "Invalid input";
+
+    // FXML components
     @FXML
-private Label welcomeText;
+    private Label welcomeText;
 
     @FXML
     private Label lblWeight;
@@ -32,7 +34,6 @@ private Label welcomeText;
 
     @FXML
     private TextField tfWeight;
-
 
     @FXML
     private TextField tfHeight;
@@ -44,163 +45,241 @@ private Label welcomeText;
     private Label lblResult;
 
     @FXML
-    private Label lblLocalTime; // New label for showing local time
-
+    private Label lblLocalTime;
 
     @FXML
     private VBox rootVBox;
 
-    @FXML
-    private ResourceBundle rb;
-    private Locale currentLocale = new Locale("en", "US");
-    private Map<String, String> localizedStrings;
-    public void initialize() {
-        setLanguage(new Locale("en", "US"));
+    // Current selected language
+    private Locale currentLocale = Locale.US;
 
+    // Translations loaded from database
+    private Map<String, String> localizedStrings = Map.of();
+
+    // Clock with explicit system time zone
+    private final Clock clock = Clock.systemDefaultZone();
+
+    // Initialize the application
+    @FXML
+    public void initialize() {
+        setLanguage(Locale.US);
     }
 
+    // Change application language
     private void setLanguage(Locale locale) {
-        /*lblResult.setText("");
-        localizedStrings = LocalizationService.getLocalizedStrings(locale);
 
-        lblWeight.setText(localizedStrings.getOrDefault("weight", "Weight"));
-        lblHeight.setText(localizedStrings.getOrDefault("height", "Height"));
-        btnCalculate.setText(localizedStrings.getOrDefault("calculate", "Calculate"));
+        currentLocale = locale;
 
-       try {
+        // Clear previous BMI result
+        lblResult.setText("");
 
-          rb = ResourceBundle.getBundle("messages", locale);
-          lblWeight.setText(rb.getString("weight"));
-          lblHeight.setText(rb.getString("height"));
-          btnCalculate.setText(rb.getString("calculate"));
+        // Load translations from MariaDB
+        localizedStrings =
+                LocalizationService.getLocalizedStrings(locale);
 
-         // show the time
-          displayLocalTime(locale);
-          applyTextDirection(locale);
+        // Update weight label
+        lblWeight.setText(
+                localizedStrings.getOrDefault(
+                        "weight",
+                        "Weight"
+                )
+        );
 
-      }catch(MissingResourceException e) {
-          e.printStackTrace();
-          lblResult.setText("Error loading resources error");
-      }*/
+        // Update height label
+        lblHeight.setText(
+                localizedStrings.getOrDefault(
+                        "height",
+                        "Height"
+                )
+        );
 
-            currentLocale = locale; // store the selected language
+        // Update calculate button
+        btnCalculate.setText(
+                localizedStrings.getOrDefault(
+                        "calculate",
+                        "Calculate"
+                )
+        );
 
-            lblResult.setText("");
-            localizedStrings = LocalizationService.getLocalizedStrings(locale);
+        // Update time and layout direction
+        displayLocalTime(locale);
+        applyTextDirection(locale);
+    }
 
-            lblWeight.setText(localizedStrings.getOrDefault("weight", "Weight"));
-            lblHeight.setText(localizedStrings.getOrDefault("height", "Height"));
-            btnCalculate.setText(localizedStrings.getOrDefault("calculate", "Calculate"));
-
-            displayLocalTime(locale);
-
-            // ✅ Apply RTL/LTR layout after setting language
-            applyTextDirection(locale);
-        }
-
-
-    public void onCalculateClick(ActionEvent actionEvent) {
-        /*if (tfWeight == null || tfHeight == null) {
-            System.err.println("TextFields are empty");
-            return;
-        }
+    // Calculate BMI and save result
+    @FXML
+    public void onCalculateClick() {
 
         try {
-            // Parse weight and height values
-            double weight = Double.parseDouble(tfWeight.getText());
-            double height = Double.parseDouble(tfHeight.getText());
+            // Read weight in kilograms
+            double weight =
+                    Double.parseDouble(tfWeight.getText());
 
             // Convert height from centimeters to meters
-            height = height / 100.0;  // Convert to meters
+            double height =
+                    Double.parseDouble(tfHeight.getText()) / 100.0;
 
-            System.out.println("Weight: " + weight + " kg, Height: " + height + " m");
+            // Validate weight and height
+            if (!Double.isFinite(weight)
+                    || !Double.isFinite(height)
+                    || weight <= 0
+                    || height <= 0) {
 
-            // Calculate BMI using the formula: BMI = weight / (height * height)
+                lblResult.setText(
+                        localizedStrings.getOrDefault(
+                                INVALID_KEY,
+                                INVALID_MESSAGE
+                        )
+                );
+                return;
+            }
+
+            // Calculate BMI
             double bmi = weight / (height * height);
-            System.out.println("Raw BMI: " + bmi);
 
-            // Format the BMI value to 2 decimal places
-            DecimalFormat df = new DecimalFormat("#0.00");
-            String bmiString = df.format(bmi);
-            System.out.println("Formatted BMI: " + bmiString);
+            // Validate calculated BMI
+            if (!Double.isFinite(bmi)) {
 
-            // Directly concatenate the BMI value to the result message
-            lblResult.setText(rb.getString("result") + " " + bmiString);
+                lblResult.setText(
+                        localizedStrings.getOrDefault(
+                                INVALID_KEY,
+                                INVALID_MESSAGE
+                        )
+                );
+                return;
+            }
+
+            // Format BMI to two decimal places
+            DecimalFormat df =
+                    new DecimalFormat("#0.00");
+
+            String resultText =
+                    localizedStrings.getOrDefault(
+                            "result",
+                            "Your BMI is"
+                    );
+
+            // Display BMI result
+            lblResult.setText(
+                    resultText + " " + df.format(bmi)
+            );
+
+            // Save BMI result to database
+            String language =
+                    currentLocale.getLanguage();
+
+            BMIResultService.saveResult(
+                    weight,
+                    height,
+                    bmi,
+                    language
+            );
 
         } catch (NumberFormatException e) {
-            // Handle invalid input
-            lblResult.setText(rb.getString("invalid"));
-        }*/
 
-        try {
-            // ✅ use the active locale
-            double weight = Double.parseDouble(tfWeight.getText());
-            double height = Double.parseDouble(tfHeight.getText()) / 100.0;
-            double bmi = weight / (height * height);
-            DecimalFormat df = new DecimalFormat("#0.00");
-            lblResult.setText(localizedStrings.getOrDefault("result", "Your BMI is") + " " + df.format(bmi));
-
-            // Save to database
-            String language = currentLocale.getLanguage();  // or store current locale
-            BMIResultService.saveResult(weight, height, bmi, language);
-
-        } catch (NumberFormatException e) {
-            lblResult.setText(localizedStrings.getOrDefault("invalid", "Invalid input"));
+            // Handle invalid numeric input
+            lblResult.setText(
+                    localizedStrings.getOrDefault(
+                            INVALID_KEY,
+                            INVALID_MESSAGE
+                    )
+            );
         }
     }
 
-
-    public void onENClick(ActionEvent actionEvent) {
-        setLanguage(new Locale("en", "US"));
+    // English language
+    @FXML
+    public void onENClick() {
+        setLanguage(Locale.US);
     }
 
-    public void onFRClick(ActionEvent actionEvent) {
-        setLanguage(new Locale("fr", "FR"));
-
+    // French language
+    @FXML
+    public void onFRClick() {
+        setLanguage(Locale.FRANCE);
     }
 
-    public void onURClick(ActionEvent actionEvent) {
-        setLanguage(new Locale("ur", "PA"));
-
+    // Urdu language
+    @FXML
+    public void onURClick() {
+        setLanguage(Locale.forLanguageTag("ur-PK"));
     }
 
-    public void onVIClick(ActionEvent actionEvent) {
-        setLanguage(new Locale("vi", "VI"));
-
+    // Vietnamese language
+    @FXML
+    public void onVIClick() {
+        setLanguage(Locale.forLanguageTag("vi-VN"));
     }
 
-    // Display the time
+    // Persian language
+    @FXML
+    public void onFAClick() {
+        setLanguage(Locale.forLanguageTag("fa-IR"));
+    }
 
+    // Display local time
     private void displayLocalTime(Locale locale) {
-        LocalTime currentTime = LocalTime.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("hh:mm:ss", locale);
-        String formattedTime = currentTime.format(formatter);
-        lblLocalTime.setText(localizedStrings.getOrDefault("localTime", "Local Time") + " " + formattedTime);
+
+        // Get time using explicit clock
+        LocalTime currentTime =
+                LocalTime.now(clock);
+
+        // Format time according to selected locale
+        DateTimeFormatter formatter =
+                DateTimeFormatter.ofPattern(
+                        "HH:mm:ss",
+                        locale
+                );
+
+        String formattedTime =
+                currentTime.format(formatter);
+
+        // Update time label
+        lblLocalTime.setText(
+                localizedStrings.getOrDefault(
+                        "localTime",
+                        "Local Time"
+                ) + " " + formattedTime
+        );
     }
 
-
-
+    // Apply RTL or LTR layout
     private void applyTextDirection(Locale locale) {
-        String lang = locale.getLanguage();
-        boolean isRTL = lang.equals("fa") || lang.equals("ur") || lang.equals("ar") || lang.equals("he");
+
+        String language = locale.getLanguage();
+
+        // Determine whether language uses RTL
+        boolean isRTL =
+                language.equals("fa")
+                        || language.equals("ur")
+                        || language.equals("ar")
+                        || language.equals("he");
 
         Platform.runLater(() -> {
+
+            // Change layout direction
             if (rootVBox != null) {
-                // Flip the full layout direction
+
                 rootVBox.setNodeOrientation(
-                        isRTL ? NodeOrientation.RIGHT_TO_LEFT : NodeOrientation.LEFT_TO_RIGHT
+                        isRTL
+                                ? NodeOrientation.RIGHT_TO_LEFT
+                                : NodeOrientation.LEFT_TO_RIGHT
                 );
             }
 
-            // Align text fields
-            tfWeight.setStyle(isRTL ? "-fx-text-alignment: right;" : "-fx-text-alignment: left;");
-            tfHeight.setStyle(isRTL ? "-fx-text-alignment: right;" : "-fx-text-alignment: left;");
+            // Align weight input
+            tfWeight.setStyle(
+                    isRTL
+                            ? "-fx-text-alignment: right;"
+                            : "-fx-text-alignment: left;"
+            );
+
+            // Align height input
+            tfHeight.setStyle(
+                    isRTL
+                            ? "-fx-text-alignment: right;"
+                            : "-fx-text-alignment: left;"
+            );
         });
     }
-
-
-    public void onFAClick(ActionEvent actionEvent) {
-        setLanguage(new Locale("fa", "IR"));
-    }
-
 }
