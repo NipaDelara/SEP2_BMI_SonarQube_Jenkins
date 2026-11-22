@@ -4,49 +4,87 @@ import java.sql.*;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class LocalizationService {
+public final class LocalizationService {
 
-    private static final String DB_NAME = "bmi_localization";
-    private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = "Test12";
+    // Logger instead of System.out and System.err
+    private static final Logger LOGGER =
+            Logger.getLogger(LocalizationService.class.getName());
 
-    // Dynamically determine DB host
-    private static String getDatabaseHost() {
-        // Try reading from environment variable (for Docker)
-        String host = System.getenv("DB_HOST");
-
-        // Fallback to localhost if not set
-        if (host == null || host.isEmpty()) {
-            host = "localhost";
-        }
-
-        return host;
+    // Prevent creating objects of this utility class
+    private LocalizationService() {
+        throw new IllegalStateException("Utility class");
     }
 
-    // Build DB connection URL dynamically
+    // Read database configuration from environment variables
+    private static String getEnv(String name, String defaultValue) {
+        String value = System.getenv(name);
+
+        return value == null || value.isBlank()
+                ? defaultValue
+                : value;
+    }
+
+    // Build database connection URL
     private static String getDatabaseUrl() {
-        return "jdbc:mysql://" + getDatabaseHost() + ":3306/" + DB_NAME + "?useSSL=false&allowPublicKeyRetrieval=true";
+        String host = getEnv("DB_HOST", "localhost");
+        String port = getEnv("DB_PORT", "3306");
+        String database = getEnv("DB_NAME", "bmi_localization");
+
+        return "jdbc:mysql://" + host + ":" + port + "/"
+                + database
+                + "?useSSL=false&allowPublicKeyRetrieval=true";
     }
 
+    // Load translations from database
     public static Map<String, String> getLocalizedStrings(Locale locale) {
+
         Map<String, String> strings = new HashMap<>();
-        String lang = locale.getLanguage();
+
+        String language = locale.getLanguage();
         String dbUrl = getDatabaseUrl();
 
-        try (Connection conn = DriverManager.getConnection(dbUrl, DB_USER, DB_PASSWORD)) {
-            String query = "SELECT `key`, value FROM localization_strings WHERE language = ?";
-            try (PreparedStatement stmt = conn.prepareStatement(query)) {
-                stmt.setString(1, lang);
-                ResultSet rs = stmt.executeQuery();
+        String dbUser = getEnv("DB_USER", "root");
+        String dbPassword = System.getenv("DB_PASSWORD");
+
+        if (dbPassword == null || dbPassword.isBlank()) {
+            LOGGER.warning("DB_PASSWORD is not configured.");
+            return strings;
+        }
+
+        String query =
+                "SELECT `key`, value FROM localization_strings "
+                        + "WHERE language = ?";
+
+        try (Connection conn =
+                     DriverManager.getConnection(
+                             dbUrl, dbUser, dbPassword);
+
+             PreparedStatement stmt =
+                     conn.prepareStatement(query)) {
+
+            stmt.setString(1, language);
+
+            try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    strings.put(rs.getString("key"), rs.getString("value"));
+                    strings.put(
+                            rs.getString("key"),
+                            rs.getString("value")
+                    );
                 }
             }
-            System.out.println("✅ Loaded localization strings for language: " + lang + " from " + dbUrl);
+
+            LOGGER.log(
+                    Level.INFO,
+                    "Loaded {0} translations for language: {1}",
+                    new Object[]{strings.size(), language}
+            );
+
         } catch (SQLException e) {
-            System.err.println("❌ Database connection failed: " + dbUrl);
-            e.printStackTrace();
+            // Log a controlled message without dumping a stack trace
+            LOGGER.warning("Unable to load localization strings from database.");
         }
 
         return strings;
